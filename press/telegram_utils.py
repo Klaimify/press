@@ -1,9 +1,11 @@
 # Copyright (c) 2020, Frappe and contributors
 # For license information, please see license.txt
 
+import asyncio
 
 import frappe
 import telegram
+from telegram.constants import MessageLimit, ParseMode
 
 from press.utils import log_error
 
@@ -30,15 +32,8 @@ class Telegram:
 		if not message:
 			return None
 		try:
-			text = message[: telegram.MAX_MESSAGE_LENGTH]
-			parse_mode = self._get_parse_mode(html)
-			return self.bot.send_message(
-				chat_id=self.chat_id,
-				text=text,
-				parse_mode=parse_mode,
-				message_thread_id=self.topic_id,
-				timeout=3,
-			)
+			text = message[: MessageLimit.MAX_TEXT_LENGTH]
+			return asyncio.run(self._send_message(text, self._get_parse_mode(html)))
 		except Exception:
 			if reraise:
 				raise
@@ -50,14 +45,33 @@ class Telegram:
 				topic_id=self.topic_id,
 			)
 
+	async def _send_message(self, text, parse_mode):
+		async with self.bot as bot:
+			return await bot.send_message(
+				chat_id=self.chat_id,
+				text=text,
+				parse_mode=parse_mode,
+				message_thread_id=self.topic_id,
+				read_timeout=3,
+			)
+
 	def _get_parse_mode(self, html):
 		if html:
-			return telegram.ParseMode.HTML
-		return telegram.ParseMode.MARKDOWN
+			return ParseMode.HTML
+		return ParseMode.MARKDOWN
 
 	@property
 	def bot(self):
 		return telegram.Bot(token=self.token)
+
+	@property
+	def username(self):
+		return asyncio.run(self._get_username())
+
+	async def _get_username(self):
+		# Entering the bot fetches its own profile, which holds the username
+		async with self.bot as bot:
+			return bot.username
 
 	def respond(self, message):
 		if not message:
@@ -82,7 +96,7 @@ class Telegram:
 
 		mention = text[begin:end]
 		# Only respond to messages mentioning the bot
-		if mention != f"@{self.bot.username}":
+		if mention != f"@{self.username}":
 			return
 
 		command = text.replace(mention, "")
