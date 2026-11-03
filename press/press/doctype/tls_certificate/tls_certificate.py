@@ -460,7 +460,8 @@ def notify_custom_tls_renewal():
 def update_server_tls_certifcate(server, certificate, throw_on_failure: bool = False):
 	try:
 		proxysql_admin_password = None
-		if server.doctype == "Proxy Server":
+		# Every proxy has a generated password; only reload TLS where ProxySQL is installed
+		if server.doctype == "Proxy Server" and server.is_proxysql_setup:
 			proxysql_admin_password = server.get_password("proxysql_admin_password")
 		ansible = Ansible(
 			playbook="tls.yml",
@@ -589,8 +590,7 @@ class LetsEncrypt(BaseCA):
 			self.staging = False
 
 	def _obtain(self):
-		if not os.path.exists(self.directory):
-			os.mkdir(self.directory)
+		os.makedirs(self.directory, exist_ok=True)
 		if self.wildcard:
 			self._obtain_wildcard()
 		else:
@@ -625,8 +625,8 @@ class LetsEncrypt(BaseCA):
 		self.run(self._certbot_command(), environment=environment)
 
 	def _obtain_naked(self):
-		if not os.path.exists(self.webroot_directory):
-			os.mkdir(self.webroot_directory)
+		# Concurrent certificate jobs share this directory
+		os.makedirs(self.webroot_directory, exist_ok=True)
 		self.run(self._certbot_command())
 
 	def _certbot_command(self):
